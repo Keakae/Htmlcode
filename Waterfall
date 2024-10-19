@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Spectral Waterfall</title>
+    <style>
+        canvas {
+            width: 100%;
+            height: 400px;
+            display: block;
+            background-color: black;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebGPU Audio Spectrum Waterfall</h1>
+    <canvas id="webgpuCanvas"></canvas>
+    <div id="status">Microphone Status: Not working</div>
+
+    <!-- Подключение Eruda для отладки -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+
+    <script>
+        const canvas = document.getElementById('webgpuCanvas');
+        const statusElement = document.getElementById('status');
+
+        // Запрашиваем доступ к микрофону
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+            .then(stream => {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                const analyser = audioContext.createAnalyser();
+
+                analyser.fftSize = 1024; // FFT разрешение
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+
+                source.connect(analyser);
+                statusElement.innerHTML = 'Microphone Status: Working';
+
+                // Инициализация WebGPU
+                if (!navigator.gpu) {
+                    alert('WebGPU not supported on this browser.');
+                    return;
+                }
+
+                const gpu = navigator.gpu;
+                const adapter = await gpu.requestAdapter();
+                const device = await adapter.requestDevice();
+                const context = canvas.getContext('webgpu');
+
+                const format = "bgra8unorm";
+                context.configure({
+                    device: device,
+                    format: format,
+                    alphaMode: "premultiplied"
+                });
+
+                const vertexShaderCode = `
+                @vertex
+                fn main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4<f32> {
+                    var pos = array<vec2<f32>, 4>(
+                        vec2<f32>(-1.0, -1.0),
+                        vec2<f32>(1.0, -1.0),
+                        vec2<f32>(-1.0, 1.0),
+                        vec2<f32>(1.0, 1.0)
+                    );
+                    return vec4<f32>(pos[VertexIndex], 0.0, 1.0);
+                }`;
+
+                const fragmentShaderCode = `
+                @fragment
+                fn main() -> @location(0) vec4<f32> {
+                    return vec4<f32>(0.0, 1.0, 0.0, 1.0);
+                }`;
+
+                const shaderModule = device.createShaderModule({
+                    code: vertexShaderCode
+                });
+
+                const fragmentModule = device.createShaderModule({
+                    code: fragmentShaderCode
+                });
+
+                // Конвейер рендеринга
+                const pipeline = device.createRenderPipeline({
+                    vertex: {
+                        module: shaderModule,
+                        entryPoint: 'main',
+                    },
+                    fragment: {
+                        module: fragmentModule,
+                        entryPoint: 'main',
+                        targets: [{ format }],
+                    },
+                    primitive: {
+                        topology: 'triangle-strip',
+                    },
+                });
+
+                function render() {
+                    analyser.getByteFrequencyData(dataArray);
+
+                    const commandEncoder = device.createCommandEncoder();
+                    const textureView = context.getCurrentTexture().createView();
+
+                    const renderPassDescriptor = {
+                        colorAttachments: [{
+                            view: textureView,
+                            clearValue: {r: 0, g: 0, b: 0, a: 1},
+                            loadOp: 'clear',
+                            storeOp: 'store',
+                        }]
+                    };
+
+                    const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+                    passEncoder.setPipeline(pipeline);
+                    passEncoder.draw(4);
+                    passEncoder.end();
+
+                    device.queue.submit([commandEncoder.finish()]);
+
+                    requestAnimationFrame(render);
+                }
+
+                render();
+            })
+            .catch(err => {
+                statusElement.innerHTML = 'Error accessing microphone: ' + err;
+                console.error('Error accessing microphone: ', err);
+            });
+    </script>
+
+</body>
+</html>
