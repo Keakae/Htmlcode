@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphone Audio Visualizer</title>
+    <style>
+        canvas {
+            width: 100%;
+            height: 300px;
+            background-color: #000;
+        }
+        #status {
+            font-size: 20px;
+            color: green;
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Microphone Audio Visualizer</h1>
+    <canvas id="visualizer"></canvas>
+    <div id="status">Microphone Status: Not working</div>
+
+    <script>
+        const canvas = document.getElementById('visualizer');
+        const canvasCtx = canvas.getContext('2d');
+        const WIDTH = canvas.width = window.innerWidth;
+        const HEIGHT = canvas.height = 300;
+
+        const statusElement = document.getElementById('status');
+
+        navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+            .then(function(stream) {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const source = audioContext.createMediaStreamSource(stream);
+                const analyser = audioContext.createAnalyser();
+                
+                analyser.fftSize = 2048;
+                const bufferLength = analyser.fftSize;
+                const dataArray = new Uint8Array(bufferLength);
+
+                source.connect(analyser);
+
+                // Обновляем статус работы микрофона
+                statusElement.innerHTML = 'Microphone Status: Working';
+
+                function draw() {
+                    requestAnimationFrame(draw);
+
+                    analyser.getByteTimeDomainData(dataArray);
+
+                    canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+                    canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                    canvasCtx.lineWidth = 2;
+                    canvasCtx.strokeStyle = 'rgb(0, 255, 0)';
+
+                    canvasCtx.beginPath();
+                    const sliceWidth = WIDTH * 1.0 / bufferLength;
+                    let x = 0;
+
+                    for (let i = 0; i < bufferLength; i++) {
+                        const v = dataArray[i] / 128.0;
+                        const y = v * HEIGHT / 2;
+
+                        if (i === 0) {
+                            canvasCtx.moveTo(x, y);
+                        } else {
+                            canvasCtx.lineTo(x, y);
+                        }
+
+                        x += sliceWidth;
+                    }
+
+                    canvasCtx.lineTo(canvas.width, canvas.height / 2);
+                    canvasCtx.stroke();
+                }
+
+                draw();
+            })
+            .catch(function(err) {
+                statusElement.innerHTML = 'Error accessing microphone: ' + err;
+                console.error('Error accessing microphone: ', err);
+            });
+    </script>
+
+    <!-- Подключение Eruda для отладки -->
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+</body>
+</html>
