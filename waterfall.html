@@ -23,12 +23,12 @@
     <canvas id="gpuCanvas" width="640" height="480"></canvas>
     <div id="status">Microphone Status: Not working</div>
 
+    <!-- Подключаем eruda для отладки -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
 
     <script type="module">
         async function initWebGPU() {
-            // Проверка поддержки WebGPU
             if (!navigator.gpu) {
                 console.error('WebGPU не поддерживается!');
                 document.getElementById('status').innerText = 'WebGPU не поддерживается!';
@@ -57,7 +57,7 @@
                 format: format
             });
 
-            // Шейдеры
+            // Вершинный шейдер
             const vertexShaderCode = `
             @vertex
             fn main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4<f32> {
@@ -71,14 +71,15 @@
                 return vec4<f32>(pos, 0.0, 1.0);
             }`;
 
+            // Фрагментный шейдер
             const fragmentShaderCode = `
             @group(0) @binding(0) var<uniform> fftData: array<f32, 1024>;
 
             @fragment
             fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-                let index = i32(fragCoord.x / 640.0 * 1024.0); // Нормализуем по ширине
+                let index = i32(fragCoord.x / 640.0 * 1024.0);  // Масштабируем координаты под буфер FFT
                 let amplitude = fftData[index];
-                let color = vec4<f32>(amplitude, 0.0, 1.0 - amplitude, 1.0); // Цвет по амплитуде
+                let color = vec4<f32>(amplitude, 0.0, 1.0 - amplitude, 1.0);
                 return color;
             }`;
 
@@ -119,14 +120,14 @@
                 }]
             });
 
-            // Работа с микрофоном
+            // Работа с микрофоном и анализ звука
             navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-                .then(function(stream) {
+                .then(function (stream) {
                     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
                     const source = audioContext.createMediaStreamSource(stream);
                     const analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 2048; // Увеличиваем размер FFT
-                    const bufferLength = analyser.frequencyBinCount;
+                    analyser.fftSize = 2048;  // Устанавливаем размер FFT
+                    const bufferLength = analyser.frequencyBinCount;  // Половина fftSize
                     const dataArray = new Uint8Array(bufferLength);
 
                     source.connect(analyser);
@@ -135,15 +136,15 @@
                     function render() {
                         analyser.getByteFrequencyData(dataArray);
 
-                        // Преобразуем данные FFT в массив float и копируем в буфер
+                        // Конвертируем данные для передачи на GPU
                         const floatArray = new Float32Array(1024);
                         for (let i = 0; i < 1024; i++) {
-                            floatArray[i] = dataArray[i] / 255.0; // Нормализуем от 0 до 1
+                            floatArray[i] = dataArray[i] / 255.0;  // Нормализация значений
                         }
 
+                        // Записываем данные в буфер GPU
                         device.queue.writeBuffer(fftBuffer, 0, floatArray.buffer, 0, floatArray.byteLength);
 
-                        // Командный энкодер для отрисовки
                         const commandEncoder = device.createCommandEncoder();
                         const textureView = context.getCurrentTexture().createView();
 
@@ -163,13 +164,13 @@
                         passEncoder.end();
 
                         device.queue.submit([commandEncoder.finish()]);
-                        
-                        requestAnimationFrame(render);
+
+                        requestAnimationFrame(render);  // Зацикливаем рендер
                     }
 
                     requestAnimationFrame(render);
                 })
-                .catch(function(err) {
+                .catch(function (err) {
                     console.error('Ошибка доступа к микрофону: ', err);
                     document.getElementById('status').innerText = 'Ошибка доступа к микрофону';
                 });
