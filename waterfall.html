@@ -25,121 +25,134 @@
 
     <script type="module">
         async function initWebGPU() {
-            // Проверка поддержки WebGPU
-            if (!navigator.gpu) {
-                console.error('WebGPU не поддерживается!');
-                return;
-            }
-
-            // Получаем адаптер и устройство
-            const adapter = await navigator.gpu.requestAdapter();
-            const device = await adapter.requestDevice();
-
-            // Настройка канваса и контекста
-            const canvas = document.getElementById('gpuCanvas');
-            const context = canvas.getContext('webgpu');
-
-            // Настройка формата контекста
-            const format = navigator.gpu.getPreferredCanvasFormat();
-            context.configure({
-                device: device,
-                format: format
-            });
-
-            // Шейдер для вершин (WGSL)
-            const vertexShaderCode = `
-            @vertex
-            fn main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4<f32> {
-                var positions = array<vec2<f32>, 4>(
-                    vec2<f32>(-1.0, -1.0),
-                    vec2<f32>( 1.0, -1.0),
-                    vec2<f32>(-1.0,  1.0),
-                    vec2<f32>( 1.0,  1.0)
-                );
-                let pos = positions[VertexIndex];
-                return vec4<f32>(pos, 0.0, 1.0);
-            }`;
-
-            // Шейдер для фрагментов (WGSL)
-            const fragmentShaderCode = `
-            @fragment
-            fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-                let y = fragCoord.y / 480.0;
-                return vec4<f32>(y, 0.0, 1.0 - y, 1.0);
-            }`;
-
-            // Создание шейдерных модулей
-            const vertexModule = device.createShaderModule({ code: vertexShaderCode });
-            const fragmentModule = device.createShaderModule({ code: fragmentShaderCode });
-
-            // Создание пайплайна
-            const pipeline = device.createRenderPipeline({
-                layout: 'auto',
-                vertex: {
-                    module: vertexModule,
-                    entryPoint: 'main',
-                    buffers: []
-                },
-                fragment: {
-                    module: fragmentModule,
-                    entryPoint: 'main',
-                    targets: [{ format: format }]
-                },
-                primitive: {
-                    topology: 'triangle-strip',
-                    cullMode: 'none'
+            try {
+                // Проверка поддержки WebGPU
+                if (!navigator.gpu) {
+                    console.error('WebGPU не поддерживается!');
+                    document.getElementById('status').innerText = 'WebGPU не поддерживается!';
+                    return;
                 }
-            });
 
-            // Запрос доступа к микрофону
-            navigator.mediaDevices.getUserMedia({ audio: true, video: false })
-                .then(function(stream) {
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const source = audioContext.createMediaStreamSource(stream);
-                    const analyser = audioContext.createAnalyser();
-                    
-                    analyser.fftSize = 2048; // FFT размер
-                    const bufferLength = analyser.frequencyBinCount;
-                    const dataArray = new Uint8Array(bufferLength);
+                // Получаем адаптер и устройство
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    throw new Error('WebGPU адаптер не найден.');
+                }
 
-                    source.connect(analyser);
-                    document.getElementById('status').innerHTML = 'Microphone Status: Working';
+                const device = await adapter.requestDevice();
+                if (!device) {
+                    throw new Error('WebGPU устройство не найдено.');
+                }
 
-                    function render() {
-                        analyser.getByteFrequencyData(dataArray); // Получаем спектральные данные
+                // Настройка канваса и контекста
+                const canvas = document.getElementById('gpuCanvas');
+                const context = canvas.getContext('webgpu');
+                if (!context) {
+                    throw new Error('WebGPU контекст не получен.');
+                }
 
-                        // Командный энкодер для отрисовки
-                        const commandEncoder = device.createCommandEncoder();
-                        const textureView = context.getCurrentTexture().createView();
-
-                        // Параметры рендеринга
-                        const renderPassDescriptor = {
-                            colorAttachments: [{
-                                view: textureView,
-                                loadOp: 'clear',
-                                clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
-                                storeOp: 'store',
-                            }]
-                        };
-
-                        // Запуск рендер-прохода
-                        const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
-                        passEncoder.setPipeline(pipeline);
-                        passEncoder.draw(4, 1, 0, 0); // Рисуем прямоугольник
-                        passEncoder.end();
-
-                        // Выполнение команд на GPU
-                        device.queue.submit([commandEncoder.finish()]);
-                        
-                        requestAnimationFrame(render);
-                    }
-
-                    render();
-                })
-                .catch(function(err) {
-                    document.getElementById('status').innerHTML = 'Error accessing microphone: ' + err;
-                    console.error('Error accessing microphone: ', err);
+                // Настройка формата контекста
+                const format = navigator.gpu.getPreferredCanvasFormat();
+                context.configure({
+                    device: device,
+                    format: format
                 });
+
+                // Шейдеры
+                const vertexShaderCode = `
+                @vertex
+                fn main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4<f32> {
+                    var positions = array<vec2<f32>, 4>(
+                        vec2<f32>(-1.0, -1.0),
+                        vec2<f32>( 1.0, -1.0),
+                        vec2<f32>(-1.0,  1.0),
+                        vec2<f32>( 1.0,  1.0)
+                    );
+                    let pos = positions[VertexIndex];
+                    return vec4<f32>(pos, 0.0, 1.0);
+                }`;
+
+                const fragmentShaderCode = `
+                @fragment
+                fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+                    let y = fragCoord.y / 480.0;
+                    return vec4<f32>(y, 0.0, 1.0 - y, 1.0);
+                }`;
+
+                // Создание шейдерных модулей
+                const vertexModule = device.createShaderModule({ code: vertexShaderCode });
+                const fragmentModule = device.createShaderModule({ code: fragmentShaderCode });
+
+                // Создание пайплайна
+                const pipeline = device.createRenderPipeline({
+                    layout: 'auto',
+                    vertex: {
+                        module: vertexModule,
+                        entryPoint: 'main',
+                        buffers: []
+                    },
+                    fragment: {
+                        module: fragmentModule,
+                        entryPoint: 'main',
+                        targets: [{ format: format }]
+                    },
+                    primitive: {
+                        topology: 'triangle-strip',
+                        cullMode: 'none'
+                    }
+                });
+
+                // Запрос доступа к микрофону
+                navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                    .then(function(stream) {
+                        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        const source = audioContext.createMediaStreamSource(stream);
+                        const analyser = audioContext.createAnalyser();
+                        
+                        analyser.fftSize = 2048;
+                        const bufferLength = analyser.frequencyBinCount;
+                        const dataArray = new Uint8Array(bufferLength);
+
+                        source.connect(analyser);
+                        document.getElementById('status').innerHTML = 'Microphone Status: Working';
+
+                        function render() {
+                            analyser.getByteFrequencyData(dataArray);
+
+                            // Командный энкодер для отрисовки
+                            const commandEncoder = device.createCommandEncoder();
+                            const textureView = context.getCurrentTexture().createView();
+
+                            // Параметры рендеринга
+                            const renderPassDescriptor = {
+                                colorAttachments: [{
+                                    view: textureView,
+                                    loadOp: 'clear',
+                                    clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                                    storeOp: 'store',
+                                }]
+                            };
+
+                            const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+                            passEncoder.setPipeline(pipeline);
+                            passEncoder.draw(4, 1, 0, 0);
+                            passEncoder.end();
+
+                            device.queue.submit([commandEncoder.finish()]);
+                            
+                            requestAnimationFrame(render);
+                        }
+
+                        render();
+                    })
+                    .catch(function(err) {
+                        document.getElementById('status').innerText = 'Error accessing microphone: ' + err.message;
+                        console.error('Error accessing microphone: ', err);
+                    });
+            } catch (e) {
+                document.getElementById('status').innerText = 'Error initializing WebGPU: ' + e.message;
+                console.error('Error initializing WebGPU: ', e);
+            }
         }
 
         // Инициализация WebGPU
