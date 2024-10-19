@@ -24,7 +24,6 @@
     <canvas id="visualizer" width="640" height="200"></canvas>
     <div id="status">Microphone Status: Not working</div>
 
-
     <script type="module">
         async function initWebGPU() {
             if (!navigator.gpu) {
@@ -61,12 +60,12 @@
             }`;
 
             const fragmentShaderCode = `
-                @group(0) @binding(0) var<uniform> fftData: array<vec4<f32>, 256>;
-                @fragment
-                fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+            @group(0) @binding(0) var<uniform> fftData: array<vec4<f32>, 256>;
+
+            @fragment
+            fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
                 let index = i32(fragCoord.x / ${canvas.width}.0 * 1024.0);
-                let subIndex = index % 4;
-                let amplitude = fftData[index / 4][subIndex];
+                let amplitude = fftData[index / 4][index % 4]; // Доступ к нужному элементу
                 let color = vec4<f32>(amplitude, 0.0, 1.0 - amplitude, 1.0);
                 return color;
             }`;
@@ -128,7 +127,12 @@
                         for (let i = 0; i < 1024; i++) {
                             floatArray[i] = dataArray[i] / 255.0;
                         }
-                        device.queue.writeBuffer(fftBuffer, 0, floatArray.buffer, 0, floatArray.byteLength);
+
+                        const vec4Array = new Float32Array(1024);
+                        for (let i = 0; i < 1024; i++) {
+                            vec4Array[i] = floatArray[i]; // Записываем в vec4
+                        }
+                        device.queue.writeBuffer(fftBuffer, 0, vec4Array.buffer, 0, vec4Array.byteLength);
 
                         const commandEncoder = device.createCommandEncoder();
                         const textureView = context.getCurrentTexture().createView();
