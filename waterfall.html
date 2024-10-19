@@ -61,12 +61,12 @@
             }`;
 
             const fragmentShaderCode = `
-            @group(0) @binding(0) var<uniform> fftData: array<f32, 1024>;
-
-            @fragment
-            fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
-                let index = i32(fragCoord.x / ${canvas.width}.0 * 1024.0);  
-                let amplitude = fftData[index];
+                @group(0) @binding(0) var<uniform> fftData: array<vec4<f32>, 256>;
+                @fragment
+                fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+                let index = i32(fragCoord.x / ${canvas.width}.0 * 1024.0);
+                let subIndex = index % 4;
+                let amplitude = fftData[index / 4][subIndex];
                 let color = vec4<f32>(amplitude, 0.0, 1.0 - amplitude, 1.0);
                 return color;
             }`;
