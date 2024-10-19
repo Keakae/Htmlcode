@@ -73,15 +73,25 @@
                 }`;
 
                 const fragmentShaderCode = `
+                @group(0) @binding(0) var<storage, read> frequencyData: array<f32>;
+
                 @fragment
                 fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
                     let y = fragCoord.y / 480.0;
-                    return vec4<f32>(y, 0.0, 1.0 - y, 1.0);
+                    let frequencyIndex = i32(fragCoord.x / 640.0 * f32(frequencyData.length()));
+                    let intensity = frequencyData[frequencyIndex];
+                    return vec4<f32>(intensity, intensity, 1.0 - intensity, 1.0);
                 }`;
 
                 // Создание шейдерных модулей
                 const vertexModule = device.createShaderModule({ code: vertexShaderCode });
                 const fragmentModule = device.createShaderModule({ code: fragmentShaderCode });
+
+                // Создание буфера для хранения данных частот
+                const frequencyBuffer = device.createBuffer({
+                    size: 2048 * Float32Array.BYTES_PER_ELEMENT, // 2048 частотных данных
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
 
                 // Создание пайплайна
                 const pipeline = device.createRenderPipeline({
@@ -102,6 +112,14 @@
                     }
                 });
 
+                const bindGroup = device.createBindGroup({
+                    layout: pipeline.getBindGroupLayout(0),
+                    entries: [{
+                        binding: 0,
+                        resource: { buffer: frequencyBuffer },
+                    }],
+                });
+
                 // Запрос доступа к микрофону
                 navigator.mediaDevices.getUserMedia({ audio: true, video: false })
                     .then(function(stream) {
@@ -119,6 +137,15 @@
                         function render() {
                             analyser.getByteFrequencyData(dataArray);
 
+                            // Преобразуем данные для передачи в WebGPU
+                            const floatDataArray = new Float32Array(dataArray.length);
+                            for (let i = 0; i < dataArray.length; i++) {
+                                floatDataArray[i] = dataArray[i] / 255.0;
+                            }
+
+                            // Копируем данные в буфер
+                            device.queue.writeBuffer(frequencyBuffer, 0, floatDataArray);
+
                             // Командный энкодер для отрисовки
                             const commandEncoder = device.createCommandEncoder();
                             const textureView = context.getCurrentTexture().createView();
@@ -135,6 +162,7 @@
 
                             const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
                             passEncoder.setPipeline(pipeline);
+                            passEncoder.setBindGroup(0, bindGroup);
                             passEncoder.draw(4, 1, 0, 0);
                             passEncoder.end();
 
