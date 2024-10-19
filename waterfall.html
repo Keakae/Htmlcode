@@ -6,7 +6,7 @@
     <title>WebGPU Spectral Waterfall with Microphone</title>
     <style>
         canvas {
-            width: 640px; /* Указываем фиксированную ширину */
+            width: 640px;
             height: 300px;
             background-color: #000;
         }
@@ -21,9 +21,9 @@
 <body>
     <h1>WebGPU Spectral Waterfall with Microphone</h1>
     <canvas id="gpuCanvas" width="640" height="480"></canvas>
+    <canvas id="visualizer" width="640" height="200"></canvas>
     <div id="status">Microphone Status: Not working</div>
 
-    <!-- Подключаем eruda для отладки -->
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
 
@@ -107,6 +107,11 @@
                 }]
             });
 
+            const visualizerCanvas = document.getElementById('visualizer');
+            const canvasCtx = visualizerCanvas.getContext('2d');
+            const WIDTH = visualizerCanvas.width;
+            const HEIGHT = visualizerCanvas.height;
+
             navigator.mediaDevices.getUserMedia({ audio: true, video: false })
                 .then(function (stream) {
                     const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -149,10 +154,43 @@
                         requestAnimationFrame(render);
                     }
 
-                    requestAnimationFrame(render);
+                    function drawVisualizer() {
+                        requestAnimationFrame(drawVisualizer);
+
+                        analyser.getByteTimeDomainData(dataArray);
+
+                        canvasCtx.fillStyle = 'rgb(0, 0, 0)';
+                        canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
+
+                        canvasCtx.lineWidth = 2;
+                        canvasCtx.strokeStyle = 'rgb(0, 255, 0)';
+
+                        canvasCtx.beginPath();
+                        const sliceWidth = WIDTH * 1.0 / bufferLength;
+                        let x = 0;
+
+                        for (let i = 0; i < bufferLength; i++) {
+                            const v = dataArray[i] / 128.0;
+                            const y = v * HEIGHT / 2;
+
+                            if (i === 0) {
+                                canvasCtx.moveTo(x, y);
+                            } else {
+                                canvasCtx.lineTo(x, y);
+                            }
+
+                            x += sliceWidth;
+                        }
+
+                        canvasCtx.lineTo(WIDTH, HEIGHT / 2);
+                        canvasCtx.stroke();
+                    }
+
+                    render();
+                    drawVisualizer();
                 })
                 .catch(function (err) {
-                    console.error('Ошибка доступа к микрофону: ', err);
+                    console.error('Ошибка доступа к микрофону:', err);
                     document.getElementById('status').innerText = 'Ошибка доступа к микрофону';
                 });
         }
