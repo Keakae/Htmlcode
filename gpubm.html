@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Neural Network Operations Benchmark</title>
+</head>
+<body>
+    <h2>WebGPU Neural Network Operations Benchmark</h2>
+    <p id="status">Initializing WebGPU...</p>
+    <p><button onclick="runBenchmark()">Run Benchmark</button></p>
+    <div id="results"></div>
+
+    <script type="module">
+        async function initWebGPU() {
+            if (!navigator.gpu) {
+                document.getElementById("status").innerText = "WebGPU is not supported on this device.";
+                return null;
+            }
+            const adapter = await navigator.gpu.requestAdapter();
+            const device = await adapter.requestDevice();
+            document.getElementById("status").innerText = "WebGPU is initialized.";
+            return device;
+        }
+
+        function createShaderModule(device, code) {
+            return device.createShaderModule({ code });
+        }
+
+        async function runOperation(device, shaderCode, workgroupSize, workCount) {
+            const module = createShaderModule(device, shaderCode);
+            const pipeline = device.createComputePipeline({
+                layout: 'auto',
+                compute: { module, entryPoint: 'main' },
+            });
+
+            const buffer = device.createBuffer({
+                size: 4 * workCount,
+                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
+            });
+
+            const bindGroup = device.createBindGroup({
+                layout: pipeline.getBindGroupLayout(0),
+                entries: [{ binding: 0, resource: { buffer } }]
+            });
+
+            const commandEncoder = device.createCommandEncoder();
+            const passEncoder = commandEncoder.beginComputePass();
+            passEncoder.setPipeline(pipeline);
+            passEncoder.setBindGroup(0, bindGroup);
+            passEncoder.dispatchWorkgroups(workgroupSize);
+            passEncoder.end();
+
+            const startTime = performance.now();
+            device.queue.submit([commandEncoder.finish()]);
+            await device.queue.onSubmittedWorkDone();
+            const endTime = performance.now();
+
+            return endTime - startTime;
+        }
+
+        async function runBenchmark() {
+            document.getElementById("results").innerHTML = "<p>Running benchmark...</p>";
+            const device = await initWebGPU();
+            if (!device) return;
+
+            const results = [];
+            
+            // Convolution Benchmark
+            const convolutionShader = `
+            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+                let x = f32(id.x);
+                buffer[id.x] = x * 0.5; // Placeholder convolution
+            }`;
+            results.push(`Convolution: ${await runOperation(device, convolutionShader, 64, 1024)} ms`);
+
+            // Matrix Multiplication Benchmark
+            const matMulShader = `
+            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+                let x = f32(id.x);
+                buffer[id.x] = x * x; // Placeholder matrix multiplication
+            }`;
+            results.push(`Matrix Multiplication: ${await runOperation(device, matMulShader, 64, 1024)} ms`);
+
+            // ReLU Benchmark
+            const reluShader = `
+            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+                let x = f32(id.x);
+                buffer[id.x] = max(x, 0.0); // ReLU operation
+            }`;
+            results.push(`ReLU Activation: ${await runOperation(device, reluShader, 64, 1024)} ms`);
+
+            // Max Pooling Benchmark
+            const poolingShader = `
+            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+                let x = f32(id.x);
+                buffer[id.x] = max(x, x * 0.5); // Placeholder pooling
+            }`;
+            results.push(`Max Pooling: ${await runOperation(device, poolingShader, 64, 1024)} ms`);
+
+            // Display results
+            document.getElementById("results").innerHTML = "<h3>Benchmark Results:</h3>" + results.map(r => `<p>${r}</p>`).join("");
+        }
+    </script>
+</body>
+</html>
