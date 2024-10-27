@@ -3,112 +3,125 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGPU Neural Network Operations Benchmark</title>
+    <title>WebGPU Benchmark</title>
+    <style>
+        canvas {
+            width: 640px;
+            height: 480px;
+            background-color: #000;
+        }
+        #status {
+            font-size: 20px;
+            color: green;
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
 </head>
 <body>
-    <h2>WebGPU Neural Network Operations Benchmark</h2>
-    <p id="status">Initializing WebGPU...</p>
-    <p><button onclick="runBenchmark()">Run Benchmark</button></p>
-    <div id="results"></div>
+    <h1>WebGPU Benchmark</h1>
+    <canvas id="gpuCanvas" width="640" height="480"></canvas>
+    <div id="status">Initializing WebGPU...</div>
 
     <script type="module">
         async function initWebGPU() {
+            const statusElem = document.getElementById('status');
+
             if (!navigator.gpu) {
-                document.getElementById("status").innerText = "WebGPU is not supported on this device.";
-                return null;
+                statusElem.innerText = 'WebGPU не поддерживается!';
+                console.error('WebGPU не поддерживается!');
+                return;
             }
+
             const adapter = await navigator.gpu.requestAdapter();
+            if (!adapter) {
+                statusElem.innerText = 'WebGPU адаптер не найден.';
+                console.error('WebGPU адаптер не найден.');
+                return;
+            }
+
             const device = await adapter.requestDevice();
-            document.getElementById("status").innerText = "WebGPU is initialized.";
-            return device;
-        }
+            const canvas = document.getElementById('gpuCanvas');
+            const context = canvas.getContext('webgpu');
+            const format = navigator.gpu.getPreferredCanvasFormat();
 
-        function createShaderModule(device, code) {
-            return device.createShaderModule({ code });
-        }
+            context.configure({
+                device: device,
+                format: format
+            });
 
-        async function runOperation(device, shaderCode, workgroupSize, workCount) {
-            const module = createShaderModule(device, shaderCode);
-            const pipeline = device.createComputePipeline({
+            const vertexShaderCode = `
+            @vertex
+            fn main(@builtin(vertex_index) VertexIndex: u32) -> @builtin(position) vec4<f32> {
+                var positions = array<vec2<f32>, 4>(
+                    vec2<f32>(-1.0, -1.0),
+                    vec2<f32>( 1.0, -1.0),
+                    vec2<f32>(-1.0,  1.0),
+                    vec2<f32>( 1.0,  1.0)
+                );
+                let pos = positions[VertexIndex];
+                return vec4<f32>(pos, 0.0, 1.0);
+            }`;
+
+            const fragmentShaderCode = `
+            @fragment
+            fn main(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4<f32> {
+                let color = vec4<f32>(fragCoord.x / ${canvas.width}.0, fragCoord.y / ${canvas.height}.0, 0.5, 1.0);
+                return color;
+            }`;
+
+            const vertexModule = device.createShaderModule({ code: vertexShaderCode });
+            const fragmentModule = device.createShaderModule({ code: fragmentShaderCode });
+
+            const pipeline = device.createRenderPipeline({
                 layout: 'auto',
-                compute: { module, entryPoint: 'main' },
+                vertex: {
+                    module: vertexModule,
+                    entryPoint: 'main',
+                    buffers: []
+                },
+                fragment: {
+                    module: fragmentModule,
+                    entryPoint: 'main',
+                    targets: [{ format: format }]
+                },
+                primitive: {
+                    topology: 'triangle-strip',
+                    cullMode: 'none'
+                }
             });
 
-            const buffer = device.createBuffer({
-                size: 4 * workCount,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
-            });
+            function render() {
+                const commandEncoder = device.createCommandEncoder();
+                const textureView = context.getCurrentTexture().createView();
 
-            const bindGroup = device.createBindGroup({
-                layout: pipeline.getBindGroupLayout(0),
-                entries: [{ binding: 0, resource: { buffer } }]
-            });
+                const renderPassDescriptor = {
+                    colorAttachments: [{
+                        view: textureView,
+                        loadOp: 'clear',
+                        clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+                        storeOp: 'store',
+                    }]
+                };
 
-            const commandEncoder = device.createCommandEncoder();
-            const passEncoder = commandEncoder.beginComputePass();
-            passEncoder.setPipeline(pipeline);
-            passEncoder.setBindGroup(0, bindGroup);
-            passEncoder.dispatchWorkgroups(workgroupSize);
-            passEncoder.end();
+                const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+                passEncoder.setPipeline(pipeline);
+                passEncoder.draw(4, 1, 0, 0);
+                passEncoder.end();
 
-            const startTime = performance.now();
-            device.queue.submit([commandEncoder.finish()]);
-            await device.queue.onSubmittedWorkDone();
-            const endTime = performance.now();
+                device.queue.submit([commandEncoder.finish()]);
 
-            return endTime - startTime;
+                requestAnimationFrame(render);
+            }
+
+            statusElem.innerText = 'WebGPU успешно инициализирован!';
+            render();
         }
 
-        async function runBenchmark() {
-            document.getElementById("results").innerHTML = "<p>Running benchmark...</p>";
-            const device = await initWebGPU();
-            if (!device) return;
-
-            const results = [];
-            
-            // Convolution Benchmark
-            const convolutionShader = `
-            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
-            @compute @workgroup_size(64)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                let x = f32(id.x);
-                buffer[id.x] = x * 0.5; // Placeholder convolution
-            }`;
-            results.push(`Convolution: ${await runOperation(device, convolutionShader, 64, 1024)} ms`);
-
-            // Matrix Multiplication Benchmark
-            const matMulShader = `
-            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
-            @compute @workgroup_size(64)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                let x = f32(id.x);
-                buffer[id.x] = x * x; // Placeholder matrix multiplication
-            }`;
-            results.push(`Matrix Multiplication: ${await runOperation(device, matMulShader, 64, 1024)} ms`);
-
-            // ReLU Benchmark
-            const reluShader = `
-            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
-            @compute @workgroup_size(64)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                let x = f32(id.x);
-                buffer[id.x] = max(x, 0.0); // ReLU operation
-            }`;
-            results.push(`ReLU Activation: ${await runOperation(device, reluShader, 64, 1024)} ms`);
-
-            // Max Pooling Benchmark
-            const poolingShader = `
-            @group(0) @binding(0) var<storage, read_write> buffer: array<f32>;
-            @compute @workgroup_size(64)
-            fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-                let x = f32(id.x);
-                buffer[id.x] = max(x, x * 0.5); // Placeholder pooling
-            }`;
-            results.push(`Max Pooling: ${await runOperation(device, poolingShader, 64, 1024)} ms`);
-
-            // Display results
-            document.getElementById("results").innerHTML = "<h3>Benchmark Results:</h3>" + results.map(r => `<p>${r}</p>`).join("");
-        }
+        initWebGPU().catch(err => {
+            document.getElementById('status').innerText = 'Ошибка инициализации WebGPU';
+            console.error('Ошибка инициализации WebGPU:', err);
+        });
     </script>
 </body>
 </html>
