@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGPU Capabilities</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+            text-align: left;
+        }
+        .unsupported {
+            color: red;
+            font-weight: bold;
+        }
+        .supported {
+            color: green;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>WebGPU Capabilities</h1>
+    <div id="gpu-info">
+        <p id="support-status"></p>
+        <table id="capabilities-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Capability</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody id="capabilities-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        async function displayWebGPUCapabilities() {
+            const statusElement = document.getElementById("support-status");
+            const table = document.getElementById("capabilities-table");
+            const tbody = document.getElementById("capabilities-body");
+
+            if (!navigator.gpu) {
+                statusElement.innerHTML = "<span class='unsupported'>WebGPU не поддерживается на этом устройстве.</span>";
+                return;
+            }
+
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    statusElement.innerHTML = "<span class='unsupported'>WebGPU адаптер не найден.</span>";
+                    return;
+                }
+
+                const device = await adapter.requestDevice();
+                statusElement.innerHTML = "<span class='supported'>WebGPU поддерживается!</span>";
+
+                const capabilities = {
+                    "GPU Name": adapter.name || "Информация не доступна",
+                    "Max Texture Dimension 1D": device.limits.maxTextureDimension1D,
+                    "Max Texture Dimension 2D": device.limits.maxTextureDimension2D,
+                    "Max Texture Dimension 3D": device.limits.maxTextureDimension3D,
+                    "Max Bind Groups": device.limits.maxBindGroups,
+                    "Max Bindings Per Bind Group": device.limits.maxBindingsPerBindGroup,
+                    "Max Compute Workgroup Size X": device.limits.maxComputeWorkgroupSizeX,
+                    "Max Compute Workgroup Size Y": device.limits.maxComputeWorkgroupSizeY,
+                    "Max Compute Workgroup Size Z": device.limits.maxComputeWorkgroupSizeZ,
+                    "Max Compute Invocations Per Workgroup": device.limits.maxComputeInvocationsPerWorkgroup,
+                    "Max Storage Buffer Binding Size": device.limits.maxStorageBufferBindingSize,
+                    "Max Uniform Buffer Binding Size": device.limits.maxUniformBufferBindingSize,
+                    "Max Samplers": device.limits.maxSamplersPerShaderStage,
+                    "Max Sampled Textures Per Shader Stage": device.limits.maxSampledTexturesPerShaderStage,
+                    "Max Storage Textures Per Shader Stage": device.limits.maxStorageTexturesPerShaderStage,
+                    "Max Uniform Buffers Per Shader Stage": device.limits.maxUniformBuffersPerShaderStage,
+                };
+
+                // Заполнение таблицы
+                table.style.display = "table";
+                for (const [key, value] of Object.entries(capabilities)) {
+                    const row = document.createElement("tr");
+                    const keyCell = document.createElement("td");
+                    keyCell.textContent = key;
+                    const valueCell = document.createElement("td");
+                    valueCell.textContent = value;
+                    row.appendChild(keyCell);
+                    row.appendChild(valueCell);
+                    tbody.appendChild(row);
+                }
+
+            } catch (error) {
+                statusElement.innerHTML = "<span class='unsupported'>Ошибка при инициализации WebGPU: " + error.message + "</span>";
+            }
+        }
+
+        displayWebGPUCapabilities();
+    </script>
+
+</body>
+</html>
